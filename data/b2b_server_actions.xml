@@ -1,0 +1,381 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openerp>
+<data>
+    <!-- Landing page -->
+    <record id="welcome" model="ir.actions.server">
+        <field name="name">B2B Home Page</field>
+        <field name="condition">True</field>
+        <field name="website_published" eval="True"/>
+        <field name="model_id" ref="website.model_website"/>
+        <field name="code">
+user_obj = pool.get('res.users')
+is_user = user_obj.has_group(cr, uid, 'base.group_user') or user_obj.has_group(cr, uid, 'website_b2b.group_user_portal')
+if not is_user:
+    response = request.website.render("website_b2b.401")
+else:
+
+    # search for the portal user and its location
+
+    location_obj = pool.get('stock.location')
+    partner_locations = location_obj.search(cr, uid, [('partner_id', '=', user.partner_id.id)], context=context)
+    if partner_locations:
+        location = location_obj.browse(cr, uid, partner_locations[0], context=context)
+    else:
+        location = None
+    response = request.website.render("website_b2b.welcome_page", {'user': user, 'location': location})
+        </field>
+        <field name="state">code</field>
+        <field name="type">ir.actions.server</field>
+    </record>
+    <!-- Report Sales/Inventory -->
+    <record id="report" model="ir.actions.server">
+        <field name="name">B2B Report Sales/Stock</field>
+        <field name="condition">True</field>
+        <field name="website_published" eval="True"/>
+        <field name="model_id" ref="website.model_website"/>
+        <field name="code">
+product_obj = pool.get('product.product')
+location_obj = pool.get('stock.location')
+user_obj = pool.get('res.users')
+is_user = user_obj.has_group(cr, uid, 'base.group_user') or user_obj.has_group(cr, uid, 'website_b2b.group_user_portal')
+if not is_user:
+    response = request.website.render("website_b2b.401")
+else:
+    partner_locations = location_obj.search(cr, uid, [('partner_id', '=', user.partner_id.id)], context=context)
+    if not partner_locations:
+        response = request.website.render("website_b2b.debug", {"data": "No location associated to this partner"})
+    else:
+        partner_location = partner_locations[0]
+
+        # updating context gives us the good stock number for the location
+        context.update({'location': partner_location})
+
+        mode = request.params['mode'] if 'mode' in request.params else None
+        products_ids = product_obj.search(cr, uid, [], context=context)
+        products = product_obj.browse(cr, uid, products_ids, context=context)
+        response = request.website.render("website_b2b.sales_inventory_page", {'products': products,
+                                                                            'mode': mode})
+        </field>
+        <field name="state">code</field>
+        <field name="type">ir.actions.server</field>
+    </record>
+    <!-- Create DO and Invoice  -->
+    <record id="invoice" model="ir.actions.server">
+        <field name="name">B2B Invoice</field>
+        <field name="condition">True</field>
+        <field name="website_published" eval="True"/>
+        <field name="model_id" ref="stock.model_stock_picking_out"/>
+        <field name="code">
+form_data = request.params
+user_obj = pool.get('res.users')
+location_obj = pool.get('stock.location')
+product_obj = pool.get('product.product')
+
+is_user = user_obj.has_group(cr, uid, 'base.group_user') or user_obj.has_group(cr, uid, 'website_b2b.group_user_portal')
+if not is_user:
+    response = request.website.render("website_b2b.401")
+elif form_data:
+    partner_locations = location_obj.search(cr, uid, [('partner_id', '=', user.partner_id.id)], context=context)
+    if not partner_locations:
+        response = request.website.render("website_b2b.debug", {"data": "No location associated to this partner"})
+    else:
+        partner_location = partner_locations[0]
+        mode = form_data.pop('mode')
+        lines = list()
+
+        # updating context gives us the good stock number for the location
+        context.update({'location': partner_location})
+
+        # handling the reporting
+
+        # each sale must be added to a delivery order
+        if mode == "sales":
+            for id in form_data.keys():
+                if form_data[id]:
+                    try:
+                        qty = int(form_data[id])
+                    except:
+                        qty = 0
+                    if qty > 0:
+                        lines.append({
+                            'name': 'B2B Sales Report',
+                            'product_uom': 1,
+                            'product_id': int(id),            # id du produit
+                            'location_id': partner_location,
+                            'location_dest_id': 9,             # partner location customers
+                            'product_qty': qty
+                        })
+
+        # each inventory move must be associated to a delivery order
+        elif mode == "inventory":
+            products = product_obj.browse(cr, uid, product_obj.search(cr, uid, [], context=context), context=context)
+            for p in products:
+                try:
+                    encoded = int(form_data.get(str(p.id)))
+                except:
+                    encoded = 0
+                    form_data[str(p.id)] = "0" # for displaying purposes only
+                if encoded &lt; 0:
+                    encoded = 0
+
+                difference = p.qty_available - encoded
+                if difference:
+                    lines.append({
+                        'name': 'B2B Sales Report',
+                        'product_uom': 1,
+                        'product_id': int(p.id),
+                        'location_id': partner_location,
+                        'location_dest_id': 9,              # partner location customers
+                        'product_qty': difference,
+                        })
+
+        if lines:
+            vals = {
+                'origin': 'B2B Portal',
+                'type': 'out',
+                'move_type': 'direct',
+                'state': 'draft',
+                'partner_id': user.partner_id.id,
+                'move_lines': [(0, 0, l) for l in lines],
+                'invoice_state': '2binvoiced',
+                'message_follower_ids': [user.partner_id.id]
+
+            }
+            new_delivery_order_id = self.create(cr, uid, vals, context=context)
+            do = self.browse(cr, uid, new_delivery_order_id, context=context)
+
+            # compute data for presentation
+            total = 0.0
+            for line in do.move_lines:
+                total += line.product_qty * line.product_id.lst_price
+
+            response = request.website.render("website_b2b.invoice_page", {'do': do,
+                                                                           'mode': mode,
+                                                                           'total': total,
+                                                                           'stock_reported_by_you': form_data})
+        else:
+            response = request.website.render("website_b2b.invoice_page", {'do': None,
+                                                                           'mode': mode,
+                                                                           'total': 0.0,
+                                                                           'stock_reported_by_you': form_data})
+        </field>
+        <field name="state">code</field>
+        <field name="type">ir.actions.server</field>
+    </record>
+
+    <!-- Confirm DO and Invoice -->
+    <record id="confirm_do_new_delivery" model="ir.actions.server">
+        <field name="name">B2B Create Delivery Order</field>
+        <field name="condition">True</field>
+        <field name="website_published" eval="True"/>
+        <field name="model_id" ref="stock.model_stock_picking_out"/>
+        <field name="code">
+form_data = request.params
+user_obj = pool.get('res.users')
+location_obj = pool.get('stock.location')
+product_obj = pool.get('product.product')
+
+is_user = user_obj.has_group(cr, uid, 'base.group_user') or user_obj.has_group(cr, uid, 'website_b2b.group_user_portal')
+if not is_user:
+    response = request.website.render("website_b2b.401")
+if form_data:
+    delivery_order_id = int(form_data['stock.picking_id'])
+    self.draft_force_assign(cr, uid, [delivery_order_id])
+    self.action_move(cr, uid, [delivery_order_id])
+
+    # create an invoice from the DO and validate the invoice
+    invoices = self.action_invoice_create(cr, uid, [delivery_order_id])
+    invoice_id = invoices[delivery_order_id]
+    workflow.trg_validate(uid, 'account.invoice', invoice_id, 'invoice_open', cr)
+
+partner_locations = location_obj.search(cr, uid, [('partner_id', '=', user.partner_id.id)], context=context)
+if not partner_locations:
+    response = request.website.render("website_b2b.debug", {"data": "No location associated to this partner"})
+else:
+    partner_location = partner_locations[0]
+
+    # updating context gives us the good stock number for the location
+    context.update({'location': partner_location})
+
+    products = product_obj.browse(cr, uid, product_obj.search(cr, uid, [], context=context), context=context)
+    response = request.website.render("website_b2b.new_delivery_page", {'products': products, 'location_id': partner_location})
+        </field>
+        <field name="state">code</field>
+        <field name="type">ir.actions.server</field>
+    </record>
+    <!-- Last order validation -->
+    <record id="finish" model="ir.actions.server">
+        <field name="name">B2B Create Delivery Order</field>
+        <field name="condition">True</field>
+        <field name="website_published" eval="True"/>
+        <field name="model_id" ref="stock.model_stock_picking_out"/>
+        <field name="code">
+form_data = request.params
+user_obj = pool.get('res.users')
+location_obj = pool.get('stock.location')
+product_obj = pool.get('product.product')
+invoice_obj = pool.get('account.invoice')
+picking_obj = pool.get('stock.picking')
+
+is_user = user_obj.has_group(cr, uid, 'base.group_user')
+if not is_user:
+    response = request.website.render("website_b2b.401")
+elif form_data:
+    partner_locations = location_obj.search(cr, uid, [('partner_id', '=', user.partner_id.id)], context=context)
+    if not partner_locations:
+        response = request.website.render("website_b2b.debug", {"data": "No location associated to this partner"})
+    else:
+        partner_location = partner_locations[0]
+
+        # compute auto-targeted deliveries + additional qties
+        products = product_obj.browse(cr, uid, product_obj.search(cr, uid, [], context=context), context=context)
+        lines = list()
+        for p in products:
+            if ("delivery_%d" % p.id) in form_data and ("additionnal_%d" % p.id) in form_data:
+                    try:
+                        delivery_qty = int(form_data["delivery_%d" % p.id])
+                    except:
+                        delivery_qty = 0
+                    try:
+                        additionnal_qty = int(form_data["additionnal_%d" % p.id])
+                    except:
+                        additionnal_qty = 0
+                    if delivery_qty + additionnal_qty:
+                        lines.append({
+                            'name': 'B2B Reordering',
+                            'product_uom': 1,
+                            'product_id': p.id,            # id du produit
+                            'location_id': 12,                  # stock central
+                            'location_dest_id': partner_location,
+                            'product_qty': delivery_qty + additionnal_qty,
+                        })
+        if lines:
+
+            # create and validate delivery order
+            vals = {
+                'origin': 'B2B Portal',
+                'type': 'out',
+                'move_type': 'direct',
+                'state': 'draft',
+                'partner_id': user.partner_id.id,
+                'move_lines': [(0, 0, l) for l in lines],
+                'carrier_id': 1,                             # id of carrier/delivery method
+                'message_follower_ids': [user.partner_id.id]
+            }
+            new_delivery_order_id = self.create(cr, uid, vals, context=context)
+            do = self.browse(cr, uid, new_delivery_order_id, context=context)
+            self.draft_force_assign(cr, uid, [new_delivery_order_id])
+
+            # create invoice for shipping costs
+            total_items = float(reduce((lambda acc, line: acc + line['product_qty']), lines, 0.0))
+            product_ids_for_delivery_costs = [7, 9, 8]
+            delivery_costs = product_obj.browse(cr, uid, product_ids_for_delivery_costs, context=context)
+            handling = delivery_costs[0] #7
+            deliverynote = delivery_costs[1] #9
+            picking = delivery_costs[2]  #8
+
+            vals2 = {
+                'partner_id': user.partner_id.id,
+                'account_id': user.partner_id.property_account_receivable.id,
+                'origin': do.name + ':B2B Portal',
+                'comment': 'This invoice covers shipping costs related to delivery order no ' + do.name,
+                'invoice_line': [
+                    (0, 0, {'product_id': handling.id,
+                            'name': handling.name,
+                            'quantity': 1.0,
+                            'price_unit': handling.lst_price}),
+                    (0, 0, {'product_id': deliverynote.id,
+                            'name': deliverynote.name,
+                            'quantity': 1.0,
+                            'price_unit': deliverynote.lst_price}),
+                    (0, 0, {'product_id': picking.id,
+                            'name': picking.name,
+                            'quantity': total_items,
+                            'price_unit': picking.lst_price}),
+                ],
+               'message_follower_ids': [user.partner_id.id]
+            }
+            invoice_id = invoice_obj.create(cr, uid, vals2, context=context)
+            invoice = invoice_obj.browse(cr, uid, invoice_id, context=context)
+            shipping_line_data = picking_obj._prepare_shipping_invoice_line(cr, uid, do, invoice, context=context)
+            invoice_obj.write(cr, uid, [invoice_id], {'invoice_line': [(0, 0, shipping_line_data)]}, context=context)
+
+            workflow.trg_validate(uid, 'account.invoice', invoice_id, 'invoice_open', cr)
+            inv = invoice_obj.browse(cr, uid, invoice_id, context=context)
+
+            response = request.website.render("website_b2b.final_do_page", {"do": do, "inv": inv})
+        else:
+            response = request.website.render("website_b2b.final_do_page", {"do": None, "inv": None})
+        </field>
+        <field name="state">code</field>
+        <field name="type">ir.actions.server</field>
+    </record>
+    <!-- Overview -->
+    <record id="overview" model="ir.actions.server">
+        <field name="name">B2B Overview</field>
+        <field name="condition">True</field>
+        <field name="website_published" eval="True"/>
+        <field name="model_id" ref="website.model_website"/>
+        <field name="code">
+user_obj = pool.get('res.users')
+is_user = user_obj.has_group(cr, uid, 'base.group_user') or user_obj.has_group(cr, uid, 'website_b2b.group_user_portal')
+if not is_user:
+    response = request.website.render("website_b2b.401")
+else:
+    location_obj = pool.get('stock.location')
+    partner_locations = location_obj.search(cr, uid, [('partner_id', '=', user.partner_id.id)], context=context)
+    if not partner_locations:
+        response = request.website.render("website_b2b.debug", {"data": "No location associated to this partner"})
+    else:
+        picking_obj = pool.get('stock.picking')
+        open_deliveries = picking_obj.browse(cr, uid, picking_obj.search(cr, uid, [('partner_id', '=', user.partner_id.id), ('type', '=', 'out'), ('state', 'in', ['auto', 'confirmed', 'assigned']), ('invoice_state', '=', 'none')], context=context), context=context)
+        completed_deliveries = picking_obj.browse(cr, uid, picking_obj.search(cr, uid, [('partner_id', '=', user.partner_id.id), ('type', '=', 'out'), ('state', '=', 'done'), ('invoice_state', '=', 'none')], context=context), context=context)
+        returns = picking_obj.browse(cr, uid, picking_obj.search(cr, uid, [('partner_id', '=', user.partner_id.id), ('type', '=', 'in')], context=context), context=context)
+
+        invoice_obj = pool.get('account.invoice')
+        invoices = invoice_obj.browse(cr, uid, invoice_obj.search(cr, uid, [('partner_id', '=', user.partner_id.id), ('state', 'in', ['open', 'paid']), ('type', '=', 'out_invoice')], context=context), context=context)
+        overdues = dict()
+        for inv in invoices:
+            overdues[inv.id] = inv.state == 'open' and datetime.datetime.strptime(inv.date_due, "%Y-%m-%d") &lt; datetime.datetime.now()
+
+        partner_location = partner_locations[0]
+        context.update({'location': partner_location})      ## The line that changes the values of product.product ifo the location
+        product_obj = pool.get('product.product')
+        stock = product_obj.browse(cr, uid, product_obj.search(cr, uid, [], context=context), context=context)
+        move_obj = pool.get('stock.move')
+        products_already_ordered = set([p.product_id for p in move_obj.browse(cr, uid, move_obj.search(cr, uid, [('location_dest_id', '=', partner_location)], context=context),context=context)])
+        stock_ordered_or_target = [product for product in stock if (product in products_already_ordered) or (product.orderpoint_ids and product.orderpoint_ids[0].location_id.id == partner_location)]
+
+        data = {'location_id': partner_location,
+                'open_deliveries': open_deliveries,
+                'completed_deliveries': completed_deliveries,
+                'returns': returns,
+                'invoices': invoices,
+                'stock': stock_ordered_or_target,
+                'overdues': overdues}
+        response = request.website.render("website_b2b.partner_overview_page", data)
+        </field>
+        <field name="state">code</field>
+        <field name="type">ir.actions.server</field>
+    </record>
+    <record id="b2bmenu" model="website.menu">
+        <field name="name">B2B portal</field>
+        <field name="url">/website/action/website_b2b.welcome</field>
+        <field name="parent_id" ref="website.main_menu" />
+        <field name="sequence">10</field>
+    </record>
+</data>
+</openerp>
+
+<!--
+    DEBUG:
+    __import__('pdb').set_trace()
+    This line should work if 'pdb' is appended to the list_ALLOWED_MODULES in server/openerp/tools/safe_eval.py
+    (this introduces a security breach; DO NOT USE IN PRODUCTION)
+
+
+    NOTES:
+    - the user must be associated to a location (choose the first one)
+    - the users must be in the "Warehouse / User" + "Invoicing" + "Sales Manager" & be careful to "Portal" security group
+    - if there are more than 1 orderpoint for a pair (product/location), the first one will be use
+-->

@@ -1,0 +1,411 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openerp>
+<data>
+    <!-- Landing page -->
+    <template id="welcome_page" name="B2B Home Page">
+        <t t-call="website.layout">
+            <div class="wrap">
+                <div class="container">
+                    <div class="jumbotron mt32">
+                        <h1>B2B Portal</h1>
+                        <p>Welcome <t t-esc="user.name"/> (<t t-esc="user.login"/>)</p>
+                        <p>Your location: <t t-raw="location.complete_name if location else '&lt;em&gt;no location associated to this user&lt;/em&gt;'"/></p>
+                        <p>
+                            <a href="/website/action/website_b2b.report?mode=sales" class="btn btn-primary">Report Sales</a>
+                            <a href="/website/action/website_b2b.report?mode=inventory" class="btn btn-primary">Report Inventory</a>
+                        </p>
+                        <p>
+                            <a href="/website/action/website_b2b.overview" class="btn btn-primary">Overview</a>
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </t>
+    </template>
+    <!-- Sales/Inventory -->
+    <template id="sales_inventory_page" name="B2B Report Sales/Inventory">
+        <t t-call="website.layout">
+            <div class="wrap">
+                <div class="container">
+                    <h1 t-if="mode == 'inventory'">Inventory Report</h1>
+                    <h1 t-if="mode == 'sales'">Sales Report</h1>
+                    <ol class="breadcrumb">
+                        <li><a href="/website/action/website_b2b.welcome"><i class="fa fa-home" /></a></li>
+                        <li t-if="mode == 'inventory'"><a href="#">Inventory Report</a></li>
+                        <li t-if="mode == 'sales'"><a href="#">Sales Report</a></li>
+                    </ol>
+                    <form method="post" t-att-name="mode" action="/website/action/website_b2b.invoice">
+                    <table class="table table-hover table-condensed" >
+                        <tr>
+                            <th> </th>
+                            <th>Product</th>
+                            <th>Stock on</th>
+                            <th t-if="mode == 'inventory'">Current stock</th>
+                            <th t-if="mode == 'sales'">Sold</th>
+                        </tr>
+                        <t t-as='p' t-foreach='products'>
+                            <tr t-if="p['qty_available'] != 0" class="js_row">
+                                <td><img t-att-src="'/website/image?model=product.product&amp;field=image_medium&amp;id='+str(p['id'])" height="128" width="128" /></td>
+                                <td t-esc='p["name"]' />
+                                <td class="js_stock" t-esc='"%d" % p["qty_available"]' />
+                                <td><input type="number" t-att-name="p['id']" min="0" placeholder="0" step="1.0" class="js_in"/></td>
+                            </tr>
+                        </t>
+                        <script type="text/javascript">
+                            $( document ).ready(function() {
+                                $(".js_in").change(function(){
+                                    var therow = $(this).closest('.js_row');
+                                    var stock = parseInt(therow.find('.js_stock').text());
+                                    var input = parseInt($(this).val());
+                                    if(_.isNumber(input) &amp;&amp; !_.isNaN(input) &amp;&amp; input &gt; stock){
+                                        therow.addClass('danger');
+                                        $('.js_overflow_alert').removeClass('hidden');
+                                        $('.js_sbutton').attr('disabled', 'disabled');
+                                    }
+                                    else {
+                                        therow.removeClass('danger');
+                                        if( $('.danger').length === 0 ){
+                                            $('.js_overflow_alert').addClass('hidden');
+                                            $('.js_sbutton').attr('disabled', false);
+                                        }
+                                    }
+                                });
+                            });
+                        </script>
+                    </table>
+                    <div class="alert alert-warning alert-dismissable">
+                        <button type="button" class="close" data-dismiss="alert" aria-hidden="true">&amp;times;</button>
+                        <strong>Warning!</strong> Before clicking on "Confirm", double-check that the requested quantities are correct. <strong>This will create an invoice.</strong>
+                    </div>
+                    <div class="alert alert-danger hidden js_overflow_alert">
+                        <t t-if="mode == 'inventory'">You should not report an inventory higher than the previous one. Are you sure?</t>
+                        <t t-if="mode == 'sales'">You are not allowed to report report sales higher than your stock. Please make an inventory report.</t>
+                        Please check lines highlighted in red.
+                    </div>
+                    <center>
+                        <a href="/website/action/website_b2b.welcome" class="btn btn-default">Back</a>
+                        <input type="hidden" name="mode" t-att-value="mode" />
+                        <button t-if="mode == 'inventory'" type="submit" class="btn btn-primary">Create Invoice</button>
+                        <button t-if="mode == 'sales'" type="submit" class="btn btn-primary js_sbutton">Create Invoice</button>
+                    </center>
+                    </form>
+                </div>
+            </div>
+        </t>
+    </template>
+    <template id="invoice_page" name="B2B Invoice">
+        <t t-call="website.layout">
+            <div class="wrap">
+                <div class="container">
+                    <div class="oe_structure" />
+                    <h1>Invoice</h1>
+                    <ol class="breadcrumb">
+                        <li><a href="/website/action/website_b2b.welcome"><i class="fa fa-home" /></a></li>
+                        <li t-if="mode == 'inventory'"><a href="#">Inventory Report</a></li>
+                        <li t-if="mode == 'sales'"><a href="#">Sales Report</a></li>
+                        <li><a href="#">Invoice</a></li>
+                    </ol>
+                    <form t-if="do" action="/website/action/website_b2b.confirm_do_new_delivery" method="post" name="confirm_do_new_delivery">
+                        <input type="hidden" name="stock.picking_id" t-att-value="do.id" />
+                        <table class="table table-hover table-condensed" >
+                            <tr>
+                                <th>Product</th>
+                                <th t-if="mode == 'inventory'" class="text-right">Stock on</th>
+                                <th t-if="mode == 'inventory'" class="text-right">Stock reported by you</th>
+                                <th class="text-right">Invoice</th>
+                                <th class="text-right">Unit price</th>
+                                <th class="text-right">Total sum</th>
+                            </tr>
+                            <tr t-as='line' t-foreach='do.move_lines'>
+                                <td><span t-esc='line.product_id.name' /></td>
+                                <td class="text-right" t-if="mode == 'inventory'"><span t-esc="'%d' % line.product_id.qty_available" /></td>
+                                <td class="text-right" t-if="mode == 'inventory'"><span t-esc="stock_reported_by_you.get(line.product_id.id.__str__())"/></td>
+                                <td class="text-right text-danger"><span t-esc='"%d" % line.product_qty' /></td>
+                                <td class="text-right"><span t-esc='"%.2f" % line.product_id.lst_price' /></td>
+                                <td class="text-right"><span t-esc='"%.2f" % (line.product_qty * line.product_id.lst_price)' /></td>
+                            </tr>
+                            <tr>
+                                <td colspan="7 if mode='inventory' else 5" class="text-right"><strong>Total: <span t-esc="'%.2f' % total" /></strong></td>
+                            </tr>
+                        </table>
+                        <div class="alert alert-warning alert-dismissable">
+                            <button type="button" class="close" data-dismiss="alert" aria-hidden="true">&amp;times;</button>
+                            <strong>Warning!</strong> Clicking on confirm will validate this invoice.
+                        </div>
+                        <center>
+                            <button type="submit" class="btn btn-danger">Confirm Invoice</button>
+                        </center>
+                    </form>
+                    <div t-if="not do">
+                        <p class="well">There is nothing to invoice. Either your stock remains unchanged, either you did not sale anything since the last reporting.</p>
+                        <center>
+                            <a class="btn btn-default" t-att-href="'/website/action/website_b2b.report?mode=%s' % mode">Back</a>
+                            <a class="btn btn-primary" href="/website/action/website_b2b.confirm_do_new_delivery">This is correct</a>
+                        </center>
+                    </div>
+                    <div class="oe_structure" />
+                </div>
+            </div>
+        </t>
+    </template>
+    <template id="new_delivery_page" name="B2B New Delivery">
+        <t t-call="website.layout">
+            <div class="wrap">
+                <div class="container">
+                    <div class="oe_structure" />
+                    <h1>Delivery</h1>
+                    <ol class="breadcrumb">
+                        <li><a href="/website/action/website_b2b.welcome"><i class="fa fa-home" /></a></li>
+                        <li><a href="#">Report</a></li>
+                        <li><a href="#">Invoice</a></li>
+                        <li><a href="#">Delivery</a></li>
+                    </ol>
+                    <form action="/website/action/website_b2b.finish" method="post" name="new_delivery_page">
+                    <table class="table table-hover table-condensed" >
+                        <tr>
+                            <th> </th>
+                            <th>Product</th>
+                            <th class="text-right">Current stock</th>
+                            <th class="text-right">Forecasted stock</th>
+                            <th class="text-right">Target stock</th>
+                            <th class="text-right">Delivery</th>
+                            <th class="text-right">Additional delivery</th>
+                            <th class="text-right">Total</th>
+                        </tr>
+                        <tr t-as='product' t-foreach='products' class="js_row">
+                            <td><img t-att-src="'/website/image?model=product.product&amp;field=image_medium&amp;id='+str(product.id)" height="128" width="128" /></td>
+                            <td><span t-esc='product.name' /></td>
+                            <td class="text-right"><span t-esc="'%d' % product.qty_available"/></td>
+                            <td class="text-right"><span t-esc="'%d' % product.virtual_available"/></td>
+                            <t t-set="orderpoints" t-value="[op.product_min_qty for op in product.orderpoint_ids if op.location_id.id == location_id]" />
+                            <t t-set="orderpoint" t-value="orderpoints[0] if orderpoints else 0" />
+                            <td class="text-right"><span t-esc='"%d" % orderpoint' /></td>
+                            <t t-set="delivery" t-value="orderpoint - product.virtual_available if product.virtual_available &lt; orderpoint else 0" />
+                            <td class="text-right text-danger"><span t-esc='"%d" % delivery' /><input class="js_delivery" type="hidden" t-att-name="'delivery_%d' % product.id" t-att-value='"%d" % delivery'/></td>
+                            <td class="text-right"><input type="number" t-att-name="'additionnal_%d' % product.id" placeholder="0" min="0" step="1.0" class="js_additionnal"/></td>
+                            <td class="text-right text-danger"><span class="js_total" t-esc='"%d" % delivery'/></td>
+                        </tr>
+                        <script type="text/javascript">
+                            $( document ).ready(function() {
+                                $(".js_additionnal").change(function(){
+                                    var therow = $(this).closest('.js_row');
+                                    var additionnal = parseInt($(this).val());
+                                    var delivery = parseInt(therow.find('.js_delivery').val());
+                                    if (!_.isNumber(additionnal) || _.isNaN(additionnal)){
+                                        additionnal = 0;
+                                    }
+                                    if(additionnal &lt; 0){
+                                        additionnal = 0;
+                                        $(this).val(0)
+                                    }
+                                    therow.find('.js_total').text(delivery + additionnal);
+                                });
+                            });
+                        </script>
+                    </table>
+                    <center>
+                        <button type="submit" class="btn btn-danger">Confirm Delivery Order</button>
+                    </center>
+                    </form>
+                    <div class="oe_structure" />
+                </div>
+            </div>
+        </t>
+    </template>
+    <template id="final_do_page" name="B2B Final Delivery Order">
+        <t t-call="website.layout">
+            <div class="wrap">
+                <div class="container">
+                    <div class="oe_structure" />
+                    <h1>Delivery Order</h1>
+                    <ol class="breadcrumb">
+                        <li><a href="/website/action/website_b2b.welcome"><i class="fa fa-home" /></a></li>
+                        <li><a href="#">Report</a></li>
+                        <li><a href="#">Invoice</a></li>
+                        <li><a href="#">Delivery</a></li>
+                        <li><a href="#">Delivery Order</a></li>
+                    </ol>
+                    <div t-if="do">
+                        <table t-if="do" class="table table-hover table-condensed" >
+                            <tr>
+                                <th>Product</th>
+                                <th class="text-right">Qty</th>
+                            </tr>
+                            <tr t-as='line' t-foreach='do.move_lines'>
+                                <td><span t-esc='line.product_id.name' /></td>
+                                <td class="text-right"><span t-esc='"%d" % (line.product_qty)' /></td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div t-if="not do">
+                        <p class="alert alert-warning">You did not order anything this time.</p>
+                    </div>
+                    <center t-if='do'>
+                        <div class="alert alert-success"><p> <t t-esc="do.name"/> - <t t-esc="do.date"/></p>
+                        <p>This order has been recorded in the system.</p>
+                        <p>Note: Shipping costs have been recorded under invoice  <t t-esc="inv.number"/></p></div>
+                    </center>
+                    <div class="well">
+                        <center>
+                        <p><strong>Your reporting is now completed!</strong></p>
+                        <a class="btn btn-primary" href="/website/action/website_b2b.welcome"><i class="fa fa-home" /> Go to homepage</a>
+                        </center>
+                    </div>
+                    <div class="oe_structure" />
+                </div>
+            </div>
+        </t>
+    </template>
+
+    <!-- Overview -->
+    <template id="partner_overview_page" name="B2B Overview">
+        <t t-call="website.layout">
+            <div class="wrap">
+                <div class="container" style="width: 100%;">
+                    <h1>Overview</h1>
+                    <ol class="breadcrumb">
+                        <li><a href="/website/action/website_b2b.welcome"><i class="fa fa-home" /></a></li>
+                        <li><a href="/website/action/website_b2b.overview" class="active">Overview</a></li>
+                    </ol>
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h2 class="panel-title"><a name="open" href="#open">Open Deliveries</a></h2>
+                        </div>
+                        <table class="table table-hover table-condensed">
+                            <tr>
+                                <th>Date</th>
+                                <th>Document Number</th>
+                                <t t-foreach="stock" t-as="product"><th t-esc="product.name" class="text-center" /></t>
+                            </tr>
+                            <tr t-foreach="open_deliveries" t-as="deliv" >
+                                <td t-esc="str(deliv.date)[:10]" />
+                                <td><a t-att-href="'/web#model=stock.picking.out&amp;view_type=form&amp;id=%d' % deliv.id" target="_blank"><t t-esc="deliv.name" /></a></td>
+                                <t t-set="lines_of_products" t-value="dict([(l.product_id.id, l.product_qty) for l in deliv.move_lines])" />
+                                <t t-foreach="stock" t-as="product"><td t-esc="'%d' % lines_of_products.get(product.id, 0)" class="text-center" /></t>
+                           </tr>
+                        </table>
+                    </div>
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h2 class="panel-title"><a name="completed" href="#completed">Completed Deliveries</a></h2>
+                        </div>
+                        <table class="table table-hover table-condensed">
+                            <tr>
+                                <th>Date</th>
+                                <th>Document Number</th>
+                                <t t-foreach="stock" t-as="product"><th t-esc="product.name" class="text-center" /></t>
+                            </tr>
+                            <tr t-foreach="completed_deliveries" t-as="deliv" >
+                                <td t-esc="str(deliv.date)[:10]" />
+                                <td><a t-att-href="'/web#model=stock.picking.out&amp;view_type=form&amp;id=%d' % deliv.id" target="_blank"><t t-esc="deliv.name" /></a></td>
+                                <t t-set="lines_of_products" t-value="dict([(l.product_id.id, l.product_qty) for l in deliv.move_lines])" />
+                                <t t-foreach="stock" t-as="product"><td t-esc="'%d' % lines_of_products.get(product.id, 0)" class="text-center" /></t>
+                           </tr>
+                        </table>
+                    </div>
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h2 class="panel-title"><a name="returns" href="#returns">Returns</a></h2>
+                        </div>
+                        <table class="table table-hover table-condensed">
+                            <tr>
+                                <th>Date</th>
+                                <th>Document Number</th>
+                                <t t-foreach="stock" t-as="product"><th t-esc="product.name" class="text-center" /></t>
+                            </tr>
+                            <tr t-foreach="returns" t-as="deliv" >
+                                <td t-esc="str(deliv.date)[:10]" />
+                                <td><a t-att-href="'/web#model=stock.picking.in&amp;view_type=form&amp;id=%d' % deliv.id" target="_blank"><t t-esc="deliv.name" /></a></td>
+                                <t t-set="lines_of_products" t-value="{l.product_id.id: l.product_qty for l in deliv.move_lines}" />
+                                <t t-foreach="stock" t-as="product"><td t-esc="'%d' % lines_of_products.get(product.id, 0)" class="text-center" /></t>
+                           </tr>
+                        </table>
+                    </div>
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h2 class="panel-title"><a name="invoices" href="#invoices">Invoices</a></h2>
+                        </div>
+                        <table class="table table-hover table-condensed">
+                            <tr>
+                                <th>Date</th>
+                                <th>Document Number</th>
+                                <th>Due Date</th>
+                                <th class="text-right">Total Amount</th>
+                                <t t-foreach="stock" t-as="product"><th t-esc="product.name" class="text-center" /></t>
+                            </tr>
+                            <t t-foreach="invoices" t-as="inv" >
+                                <tr t-att-class="'danger' if overdues[inv.id] else ('info' if inv.state == 'open' else '')">
+                                    <td t-esc="inv.date_invoice" />
+                                    <td><a t-att-href="'/web#model=account.invoice&amp;view_type=form&amp;id=%d' % inv.id" target="_blank"><t t-esc="inv.internal_number" /></a></td>
+                                    <td t-esc="inv.date_due" />
+                                    <td class="text-right" t-esc="'%.2f' % inv.amount_total" />
+                                    <t t-set="lines_of_products" t-value="dict([(l.product_id.id, l.quantity) for l in inv.invoice_line if l.product_id])" />
+                                    <t t-foreach="stock" t-as="product"><td t-esc="'%d' % lines_of_products.get(product.id, 0)" class="text-center" /></t>
+                                </tr>
+                           </t>
+                        </table>
+                    </div>
+                    <div class="panel panel-default">
+                        <div class="panel-heading">
+                            <h3 class="panel-title"><a name="stock" href="#stock">Stock</a></h3>
+                        </div>
+                        <table class="table table-hover table-condensed">
+                            <tr>
+                                <th></th>
+                                <t t-foreach="stock" t-as="product"><th t-esc="product.name" class="text-center" /></t>
+                            </tr>
+                            <tr>
+                                <th>Quantity</th>
+                                <t t-foreach="stock" t-as="product"><td t-esc="'%d' % product.qty_available" class="text-center" /></t>
+                            </tr>
+                            <tr>
+                                <th>Target</th>
+                                <t t-foreach="stock" t-as="product">
+                                    <t t-set="orderpoints" t-value="[op.product_min_qty for op in product.orderpoint_ids if op.location_id.id == location_id]" />
+                                    <td t-esc="('%d' % orderpoints[0]) if orderpoints else 'n/a'" class="text-center" />
+                                </t>
+                            </tr>
+                        </table>
+                    </div>
+                    <center>
+                        <a href="/website/action/website_b2b.welcome" class="btn btn-primary hidden-print">Back</a>
+                    </center>
+                </div>
+            </div>
+        </t>
+    </template>
+    <template id="lines_widget" name="B2B Lines Widget">
+        <td>
+            <div class="row" t-foreach='deliv.move_lines' t-as='line' >
+                <div class="col-xs-8" t-esc="line.product_id.name"/>
+                <div class="col-xs-4" t-esc="'%d' % line.product_qty"/>
+            </div>
+        </td>
+    </template>
+
+    <!-- Util -->
+    <template id="401" name="B2B 401">
+        <t t-call="website.layout">
+            <div class="wrap">
+                <div class="container">
+                    <div class="jumbotron mt32">
+                        <h1>Retailer Portal</h1>
+                        <p>You must be <a href="/web/login?redirect=/website/action/website_b2b.welcome">logged in</a> to see something here.</p>
+                    </div>
+                </div>
+            </div>
+        </t>
+    </template>
+    <template id="debug" name="B2B Home Page">
+        <t t-call="website.layout">
+            <div class="wrap">
+                <div class="container">
+                    <div class="jumbotron mt32">
+                        <p t-esc="data"/>
+                    </div>
+                </div>
+            </div>
+        </t>
+    </template>
+</data>
+</openerp>
