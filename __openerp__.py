@@ -31,7 +31,8 @@ B2B Platform based on website
     'data': [
         'views/b2b_templates.xml',
         'data/b2b_server_actions.xml',
-        'security/b2b_group.xml'
+        'security/security.xml',
+        'security/ir.model.access.csv',
     ],
     'installable': True,
     'auto_install': False,

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openerp>
+	<data>
+
+		<!-- b2b user group -->
+	    <record model="res.groups" id="group_user_portal">
+	        <field name="name">B2B Portal / User</field>
+	        <field name="category_id" ref="base.module_category_tools"/>
+	    </record>
+
+	    <!-- deactivate prohibitors of invoice and picking -->
+        <delete id="portal_stock.portal_stock_picking_user_rule" model="ir.rule"/>
+        <delete id="portal_sale.portal_account_invoice_user_rule" model="ir.rule"/>
+
+	</data>
+</openerp>
