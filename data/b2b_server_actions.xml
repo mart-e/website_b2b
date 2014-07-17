@@ -131,7 +131,7 @@ elif form_data:
                         })
 
         if lines:
-            picking_type_id = picking_type_obj.search(cr,uid,[('warehouse_id.partner_id', '=', user.partner_id.id), ('code', '=', 'outgoing')])
+            picking_type_id = picking_type_obj.search(cr,uid,[('warehouse_id.partner_id', '=', user.partner_id.id), ('code', '=', 'incoming')])
             if len(picking_type_id) > 1:
                 response = request.website.render("website_b2b.debug", 
                     {"data": "There should be only one warehouse created for the user's partner (%s)" % user.partner_id.name})
@@ -233,6 +233,8 @@ product_obj = pool['product.product']
 invoice_obj = pool['account.invoice']
 picking_obj = pool['stock.picking']
 picking_type_obj = pool['stock.picking.type']
+config_obj = pool['ir.config_parameter']
+response = None
 
 is_user = user_obj.has_group(cr, uid, 'base.group_user')
 if not is_user:
@@ -243,7 +245,6 @@ elif form_data:
         response = request.website.render("website_b2b.debug", {"data": "No location associated with this partner"})
     else:
         partner_location = partner_locations[0]
-
         # compute auto-targeted deliveries + additional qties
         products = product_obj.browse(cr, uid, product_obj.search(cr, uid, [], context=context), context=context)
         lines = list()
@@ -269,7 +270,7 @@ elif form_data:
         if lines:
 
             # create and validate delivery order
-            picking_type_id = picking_type_obj.search(cr,uid,[('warehouse_id.partner_id', '=', user.partner_id.id), ('code', '=', 'incoming')])
+            picking_type_id = picking_type_obj.search(cr,uid,[('warehouse_id.partner_id', '=', user.partner_id.id), ('code', '=', 'outgoing')])
             
             if len(picking_type_id) > 1:
                 response = request.website.render("website_b2b.debug", 
@@ -295,42 +296,56 @@ elif form_data:
 
                 # create invoice for shipping costs
                 total_items = float(reduce((lambda acc, line: acc + line['product_uom_qty']), lines, 0.0))
-                product_ids_for_delivery_costs = [7, 9, 8]
-                delivery_costs = product_obj.browse(cr, uid, product_ids_for_delivery_costs, context=context)
-                handling = delivery_costs[0] #7
-                deliverynote = delivery_costs[1] #9
-                picking = delivery_costs[2]  #8
 
-                vals_invoice = {
-                    'partner_id': user.partner_id.id,
-                    'account_id': user.partner_id.property_account_receivable.id,
-                    'origin': do.name + ':B2B Portal',
-                    'comment': 'This invoice covers shipping costs related to delivery order no ' + do.name,
-                    'invoice_line': [
-                        (0, 0, {'product_id': handling.id,
-                                'name': handling.name,
-                                'quantity': 1.0,
-                                'price_unit': handling.lst_price}),
-                        (0, 0, {'product_id': deliverynote.id,
-                                'name': deliverynote.name,
-                                'quantity': 1.0,
-                                'price_unit': deliverynote.lst_price}),
-                        (0, 0, {'product_id': picking.id,
-                                'name': picking.name,
-                                'quantity': total_items,
-                                'price_unit': picking.lst_price}),
-                    ],
-                   'message_follower_ids': [user.partner_id.id]
-                }
-                invoice_id = invoice_obj.create(cr, uid, vals_invoice, context=context)
-                invoice = invoice_obj.browse(cr, uid, invoice_id, context=context)
-                shipping_line_data = picking_obj._prepare_shipping_invoice_line(cr, uid, do, invoice, context=context)
-                invoice_obj.write(cr, uid, [invoice_id], {'invoice_line': [(0, 0, shipping_line_data)]}, context=context)
+                # get delivery cost product ids from ir.config_parameter
+                delivery_product_keys = ['B2B Handling Product ID', 'B2B Delivery Note Product ID', 'B2B Picking Product ID']
+                delivery_product_params = dict.fromkeys(delivery_product_keys)
+                config_ids = config_obj.search(cr, uid, [('key', 'in', delivery_product_keys)], context=context)
+                for config in config_obj.browse(cr, uid, config_ids, context=context):
+                    try:
+                        val = int(config.value)
+                        if not val:
+                            raise ValueError('B2B Product ID configuration parameters not setup')
+                        delivery_product_params[config.key] = product_obj.browse(cr, uid, val, context=context)
+                    except:
+                        response = request.website.render("website_b2b.debug", {"data": "Please supply the system parameters whose keys start with 'B2B' with product IDS by going to Settings > Parameters > System Parameters"})
 
-                workflow.trg_validate(uid, 'account.invoice', invoice_id, 'invoice_open', cr)
-                inv = invoice_obj.browse(cr, uid, invoice_id, context=context)
+                if not response:
+                    handling = delivery_product_params[delivery_product_keys[0]]
+                    deliverynote = delivery_product_params[delivery_product_keys[1]]
+                    picking = delivery_product_params[delivery_product_keys[2]]
 
-                response = request.website.render("website_b2b.final_do_page", {"do": do, "inv": inv})
+                    vals_invoice = {
+                        'partner_id': user.partner_id.id,
+                        'account_id': user.partner_id.property_account_receivable.id,
+                        'origin': do.name + ':B2B Portal',
+                        'comment': 'This invoice covers shipping costs related to delivery order no ' + do.name,
+                        'invoice_line': [
+                            (0, 0, {'product_id': handling.id,
+                                    'name': handling.name,
+                                    'quantity': 1.0,
+                                    'price_unit': handling.lst_price}),
+                            (0, 0, {'product_id': deliverynote.id,
+                                    'name': deliverynote.name,
+                                    'quantity': 1.0,
+                                    'price_unit': deliverynote.lst_price}),
+                            (0, 0, {'product_id': picking.id,
+                                    'name': picking.name,
+                                    'quantity': total_items,
+                                    'price_unit': picking.lst_price}),
+                        ],
+                       'message_follower_ids': [user.partner_id.id]
+                    }
+                    invoice_id = invoice_obj.create(cr, uid, vals_invoice, context=context)
+                    invoice = invoice_obj.browse(cr, uid, invoice_id, context=context)
+                    shipping_line_data = picking_obj._prepare_shipping_invoice_line(cr, uid, do, invoice, context=context)
+                    if shipping_line_data:
+                        invoice_obj.write(cr, uid, [invoice_id], {'invoice_line': [(0, 0, shipping_line_data)]}, context=context)
+
+                    workflow.trg_validate(uid, 'account.invoice', invoice_id, 'invoice_open', cr)
+                    inv = invoice_obj.browse(cr, uid, invoice_id, context=context)
+
+                    response = request.website.render("website_b2b.final_do_page", {"do": do, "inv": inv})
         else:
             response = request.website.render("website_b2b.final_do_page", {"do": None, "inv": None})
         </field>

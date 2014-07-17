@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <openerp>
-	<data>
+	<data noupdate="1">
 
 		<!-- b2b user group -->
 	    <record model="res.groups" id="group_user_portal">
