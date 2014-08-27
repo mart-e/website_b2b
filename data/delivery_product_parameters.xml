@@ -2,17 +2,17 @@
 <openerp>
 <data noupdate="1">
     <!-- configuration parameters for delivery products -->
-    <record id="delivery_product_handling" model="ir.config_parameter">
+    <record id="website_b2b.delivery_product_handling" model="ir.config_parameter">
         <field name="key">B2B Handling Product ID</field>
         <field name="value"> </field>
     </record>
 
-    <record id="delivery_product_deliverynote" model="ir.config_parameter">
+    <record id="website_b2b.delivery_product_deliverynote" model="ir.config_parameter">
         <field name="key">B2B Delivery Note Product ID</field>
         <field name="value"> </field>
     </record>
     
-    <record id="delivery_product_picking" model="ir.config_parameter">
+    <record id="website_b2b.delivery_product_picking" model="ir.config_parameter">
         <field name="key">B2B Picking Product ID</field>
         <field name="value"> </field>
     </record>
