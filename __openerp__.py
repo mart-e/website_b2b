@@ -32,6 +32,8 @@ B2B Platform based on website
         'views/b2b_templates.xml',
         'data/b2b_server_actions.xml',
         'data/delivery_product_parameters.xml',
+        'data/product_product_fields.xml',
+        'data/product_product_view.xml',
         'security/security.xml',
         'security/ir.model.access.csv',
     ],

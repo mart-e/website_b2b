@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openerp>
+  <data noupdate="true">
+    <record model="ir.model.fields" id="website_b2b.x_b2b_available">
+      <field name="name">x_b2b_available</field>
+      <field name="field_description">Available on B2B portal</field>
+      <field name="model_id" eval="ref('product.model_product_product')"/>
+      <field name="model">product.product</field>
+      <field name="ttype">boolean</field>
+      <field name="state">manual</field>
+    </record>
+  </data>
+</openerp>
