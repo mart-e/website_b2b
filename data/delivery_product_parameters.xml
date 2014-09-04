@@ -4,17 +4,17 @@
     <!-- configuration parameters for delivery products -->
     <record id="website_b2b.delivery_product_handling" model="ir.config_parameter">
         <field name="key">B2B Handling Product ID</field>
-        <field name="value"> </field>
+        <field name="value"></field>
     </record>
 
     <record id="website_b2b.delivery_product_deliverynote" model="ir.config_parameter">
         <field name="key">B2B Delivery Note Product ID</field>
-        <field name="value"> </field>
+        <field name="value"></field>
     </record>
     
     <record id="website_b2b.delivery_product_picking" model="ir.config_parameter">
         <field name="key">B2B Picking Product ID</field>
-        <field name="value"> </field>
+        <field name="value"></field>
     </record>
 
 </data>
