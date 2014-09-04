@@ -90,6 +90,7 @@ elif form_data:
         # handling the reporting
 
         # each sale must be added to a delivery order
+        customer_location = location_obj.search(cr, uid, [('usage','=','customer')], context=context, limit=1, order='id')[0]
         if mode == "sales":
             for id in form_data.keys():
                 if form_data[id]:
@@ -98,12 +99,13 @@ elif form_data:
                     except:
                         qty = 0
                     if qty > 0:
+                        
                         lines.append({
                             'name': 'B2B Sales Report',
-                            'product_uom': 1,
+                            'product_uom': p.uom_id.id,
                             'product_id': int(id),            # id du produit
                             'location_id': partner_location,
-                            'location_dest_id': 9,             # partner location customers
+                            'location_dest_id': customer_location,  # partner location customers
                             'product_uom_qty': qty
                         })
 
@@ -123,10 +125,10 @@ elif form_data:
                 if difference:
                     lines.append({
                         'name': 'B2B Sales Report',
-                        'product_uom': 1,
+                        'product_uom': p.uom_id.id,
                         'product_id': int(p.id),
                         'location_id': partner_location,
-                        'location_dest_id': 9,              # partner location customers
+                        'location_dest_id': customer_location,              # partner location customers
                         'product_uom_qty': difference,
                         })
 
@@ -244,7 +246,7 @@ elif form_data:
     if not partner_locations:
         response = request.website.render("website_b2b.debug", {"data": "No location associated with this partner"})
     else:
-        partner_location = partner_locations[0]
+        partner_location = location_obj.browse(cr, uid, partner_locations[0], context=context)
         # compute auto-targeted deliveries + additional qties
         products = product_obj.browse(cr, uid, product_obj.search(cr, uid, [], context=context), context=context)
         lines = list()
@@ -261,10 +263,10 @@ elif form_data:
                     if delivery_qty + additionnal_qty:
                         lines.append({
                             'name': 'B2B Reordering',
-                            'product_uom': 1,
-                            'product_id': p.id,            # id du produit
-                            'location_id': 12,                  # stock central
-                            'location_dest_id': partner_location,
+                            'product_uom': p.uom_id.id,
+                            'product_id': p.id,  # id du produit
+                            'location_id': partner_location.location_id.id,  # parent location
+                            'location_dest_id': partner_location.id,
                             'product_uom_qty': delivery_qty + additionnal_qty,
                         })
         if lines:
@@ -280,6 +282,9 @@ elif form_data:
                     {"data": "Please create a warehouse for the user's partner (%s)" % user.partner_id.name})
                 
             else: # found warehouse
+                carrier_obj = pool['delivery.carrier']
+                first_carrier = carrier_obj.search(cr, uid, [], context=context, order='id', limit=1)
+                first_carrier = first_carrier and first_carrier[0] or []
                 vals_delivery_order = {
                     'origin': 'B2B Portal',
                     'picking_type_id': picking_type_id[0],
@@ -287,7 +292,7 @@ elif form_data:
                     'state': 'draft',
                     'partner_id': user.partner_id.id,
                     'move_lines': [(0, 0, l) for l in lines],
-                    'carrier_id': 1,                             # id of carrier/delivery method
+                    'carrier_id': first_carrier,                             # id of carrier/delivery method
                     'message_follower_ids': [user.partner_id.id]
                 }
                 new_delivery_order_id = self.create(cr, uid, vals_delivery_order, context=context)
