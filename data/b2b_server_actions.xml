@@ -51,7 +51,8 @@ else:
         context.update({'location': partner_location})
 
         mode = request.params['mode'] if 'mode' in request.params else None
-        products_ids = product_obj.search(cr, uid, [], context=context)
+        domain = ['|',('x_b2b_available','=', True),('qty_available','>=', 0)]
+        products_ids = product_obj.search(cr, uid, domain, context=context)
         products = product_obj.browse(cr, uid, products_ids, context=context)
         response = request.website.render("website_b2b.sales_inventory_page", {'products': products,
                                                                             'mode': mode})
@@ -111,7 +112,8 @@ elif form_data:
 
         # each inventory move must be associated with a delivery order
         elif mode == "inventory":
-            products = product_obj.browse(cr, uid, product_obj.search(cr, uid, [], context=context), context=context)
+            domain = [('x_b2b_available','=', True)]
+            products = product_obj.browse(cr, uid, product_obj.search(cr, uid, domain, context=context), context=context)
             for p in products:
                 try:
                     encoded = int(form_data.get(str(p.id)))
@@ -215,7 +217,8 @@ else:
     # updating context gives us the good stock number for the location
     context.update({'location': partner_location})
 
-    products = product_obj.browse(cr, uid, product_obj.search(cr, uid, [('uom_id', '=', 1)], context=context), context=context)
+    domain = [('x_b2b_available','=', True)]
+    products = product_obj.browse(cr, uid, product_obj.search(cr, uid, domain, context=context), context=context)
     response = request.website.render("website_b2b.new_delivery_page", {'products': products, 'location_id': partner_location})
         </field>
         <field name="state">code</field>
